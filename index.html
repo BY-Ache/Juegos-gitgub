@@ -24,7 +24,7 @@ main{max-width:1100px;margin:0 auto;padding:0 20px 40px}
 .tab{font:inherit;font-weight:700;border:2px solid var(--line);background:var(--surface);color:var(--text);padding:6px 16px;border-radius:999px;cursor:pointer}
 .tab[aria-pressed=true]{background:var(--text);color:var(--bg);border-color:var(--text)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.card{position:relative;border:0;border-radius:22px;aspect-ratio:1;color:#fff;cursor:pointer;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px;transition:transform .15s,border-radius .15s}
+.card{position:relative;border:0;border-radius:22px;aspect-ratio:1;color:#fff;cursor:pointer;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:18px}
 .card:hover{transform:scale(1.05);border-radius:34px}
 .card .ico{font-size:56px;line-height:1}
 .card b{font-size:19px;font-weight:800}
@@ -73,6 +73,7 @@ const GAMES=[
  {id:'snake',name:'Serpiente',cat:'Arcade',ico:'🐍',col:'var(--c2)'},
  {id:'memory',name:'Memoria',cat:'Puzzle',ico:'🧠',col:'var(--c5)'},
  {id:'reflex',name:'Reflejos',cat:'Habilidad',ico:'🎯',col:'var(--c1)'},
+ {id:'arkanoid',name:'Arkanoid',cat:'Arcade',ico:'🧱',col:'var(--c4)'},
  {id:'s1',name:'Próximamente',cat:'Arcade',ico:'🏎️',soon:1},
  {id:'s2',name:'Próximamente',cat:'Puzzle',ico:'🧩',soon:1}
 ];
@@ -98,7 +99,7 @@ function open(id){
   $('#dt').textContent=g.name;
   $('#stage').innerHTML='';
   $('#dlg').showModal();
-  ({snake,memory,reflex})[id]($('#stage'));
+  ({snake,memory,reflex,arkanoid})[id]($('#stage'));
 }
 function end(){if(stop)stop();stop=null;$('#stage').innerHTML=''}
 $('#close').onclick=()=>$('#dlg').close();
@@ -164,10 +165,151 @@ function reflex(el){
   }
   $('#go').onclick=()=>{
     clearInterval(iv);p=0;t=20;$('#p').textContent=0;$('#t').textContent=20;spawn();
-    iv=setInterval(()=>{t--;$('#t').textContent=t;if(t<=0){clearInterval(iv);f.innerHTML='<p style="padding-top:110px;font-weight:800;font-size:22px">¡Tiempo! Hiciste '+p+' puntos</p>';$('#go').textContent='Jugar otra vez'}},1000);
+    iv=setInterval(()=>{t--;$('#t').textContent=t;if(t<=0){clearInterval(iv);f.innerHTML='<p style="padding-top:110px;font-weight:800;font-size:22px">¡Tiempo! Hiciste '+p+' puntos</p>';$('#go').disabled=false}},1000);
+    $('#go').disabled=true;
+    stop=()=>{clearInterval(iv)};
   };
-  stop=()=>clearInterval(iv);
 }
+
+/* Arkanoid */
+function arkanoid(el){
+  el.innerHTML = '<p class="score">Puntos: <span id="ascore">0</span> · Vidas: <span id="alives">3</span></p><canvas id="acv" width="480" height="320"></canvas>';
+  const cv = $('#acv');
+  const ctx = cv.getContext('2d');
+  let W = cv.width, H = cv.height;
+  // game state
+  let paddle = {w:80,h:12,x: (W-80)/2, speed: 7};
+  let ball = {x: W/2, y: H-60, r:8, vx:4, vy:-4};
+  const rows = 5, cols = 8;
+  const brickW = Math.floor((W - 40) / cols);
+  const brickH = 18;
+  let bricks = [];
+  let score = 0, lives = 3, raf=0, left=false, right=false, running=true;
+
+  function makeBricks(){
+    bricks = [];
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        bricks.push({x:20 + c*(brickW+5), y:40 + r*(brickH+6), w:brickW, h:brickH, alive:true, hits:1});
+      }
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // background
+    ctx.fillStyle='#0f0a2e'; ctx.fillRect(0,0,W,H);
+    // bricks
+    bricks.forEach(b=>{
+      if(!b.alive) return;
+      ctx.fillStyle = '#3d7bff'; ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.strokeStyle = '#fff'; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    });
+    // paddle
+    ctx.fillStyle = '#ff4f8b'; ctx.fillRect(paddle.x, H - 40, paddle.w, paddle.h);
+    // ball
+    ctx.beginPath(); ctx.fillStyle = '#ffd166'; ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+    // HUD handled by DOM
+  }
+
+  function resetBall(){
+    ball.x = W/2; ball.y = H-80; ball.vx = 4*(Math.random()>0.5?1:-1); ball.vy = -4;
+  }
+
+  function step(){
+    // move paddle
+    if(left) paddle.x -= paddle.speed;
+    if(right) paddle.x += paddle.speed;
+    paddle.x = Math.max(0, Math.min(W - paddle.w, paddle.x));
+    // move ball
+    ball.x += ball.vx; ball.y += ball.vy;
+    // wall collisions
+    if(ball.x - ball.r < 0){ball.x = ball.r; ball.vx *= -1}
+    if(ball.x + ball.r > W){ball.x = W - ball.r; ball.vx *= -1}
+    if(ball.y - ball.r < 0){ball.y = ball.r; ball.vy *= -1}
+    // paddle collision
+    if(ball.y + ball.r > H - 40 && ball.y + ball.r < H - 40 + paddle.h && ball.x > paddle.x && ball.x < paddle.x + paddle.w){
+      // reflect depending on hit position
+      const hit = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
+      ball.vx = 5 * hit; ball.vy = -Math.abs(ball.vy);
+    }
+    // bottom (lose life)
+    if(ball.y - ball.r > H){
+      lives--; $('#alives').textContent = lives;
+      if(lives<=0){ // game over
+        running=false; endGame(false); return;
+      } else { resetBall(); }
+    }
+    // bricks collisions
+    for(let i=0;i<bricks.length;i++){
+      const b = bricks[i];
+      if(!b.alive) continue;
+      if(ball.x + ball.r > b.x && ball.x - ball.r < b.x + b.w && ball.y + ball.r > b.y && ball.y - ball.r < b.y + b.h){
+        b.alive = false; score += 10; $('#ascore').textContent = score;
+        // simple reflect
+        ball.vy *= -1; break;
+      }
+    }
+    // win check
+    if(bricks.every(b=>!b.alive)){ running=false; endGame(true); return; }
+    draw();
+    raf = requestAnimationFrame(step);
+  }
+
+  function endGame(win){
+    cancelAnimationFrame(raf);
+    const msg = win ? `¡Ganaste! Puntos: ${score}` : `Fin de juego. Puntos: ${score}`;
+    const p = document.createElement('p'); p.style.fontWeight='800'; p.style.fontSize='18px'; p.style.paddingTop='12px'; p.textContent = msg;
+    el.appendChild(p);
+    stop = cleanup;
+  }
+
+  function cleanup(){
+    running=false; cancelAnimationFrame(raf);
+    removeListeners();
+  }
+
+  function resize(){
+    // scale canvas to parent width while keeping ratio
+    const parentW = cv.parentElement.clientWidth - 36; // account for padding
+    const scale = Math.min(1, parentW / 480);
+    cv.style.width = Math.floor(W * scale) + 'px';
+  }
+
+  function onKeyDown(e){ if(e.key==='ArrowLeft') left=true; if(e.key==='ArrowRight') right=true }
+  function onKeyUp(e){ if(e.key==='ArrowLeft') left=false; if(e.key==='ArrowRight') right=false }
+  function onMove(e){
+    const rect = cv.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    // map to canvas coord
+    const scale = cv.width / rect.width;
+    paddle.x = cx*scale - paddle.w/2;
+    paddle.x = Math.max(0, Math.min(W - paddle.w, paddle.x));
+  }
+
+  function addListeners(){
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    cv.addEventListener('mousemove', onMove);
+    cv.addEventListener('touchstart', onMove);
+    cv.addEventListener('touchmove', onMove);
+    window.addEventListener('resize', resize);
+  }
+  function removeListeners(){
+    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keyup', onKeyUp);
+    cv.removeEventListener('mousemove', onMove);
+    cv.removeEventListener('touchstart', onMove);
+    cv.removeEventListener('touchmove', onMove);
+    window.removeEventListener('resize', resize);
+  }
+
+  // init
+  makeBricks(); resetBall(); $('#ascore').textContent = score; $('#alives').textContent = lives;
+  addListeners(); resize(); draw(); raf = requestAnimationFrame(step);
+  stop = cleanup;
+}
+
 render();
 </script>
 </body>
